@@ -1,0 +1,87 @@
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import cross_val_score
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import StratifiedKFold
+import matplotlib.pyplot as plt
+
+
+df = pd.read_csv("dataset_lbp.csv")
+
+# Separar características e rótulos
+X = df.drop("label", axis=1).values
+y = LabelEncoder().fit_transform(df["label"])
+
+chromosome_length = X.shape[1]  # 64 características LBP
+population_size = 30
+max_generations = 50
+mutation_rate = 0.05
+
+
+def create_reference_solution(length):
+    return np.ones(length, dtype=bool)
+
+def create_starting_population(pop_size, length):
+    return np.random.randint(0, 2, (pop_size, length)).astype(bool)
+
+def calculate_fitness(X, y, population):
+    fitness = []
+    for individual in population:
+        if np.count_nonzero(individual) == 0:
+            fitness.append(0)
+            continue
+        X_selected = X[:, individual]
+        clf = KNeighborsClassifier(n_neighbors=3)
+        scores = cross_val_score(clf, X_selected, y, cv=StratifiedKFold(n_splits=3))
+        fitness.append(scores.mean())
+    return np.array(fitness)
+
+def select_individual_by_tournament(population, fitness, k=3):
+    selected = np.random.choice(len(population), k)
+    best_idx = selected[np.argmax(fitness[selected])]
+    return population[best_idx]
+
+def breed_by_crossover(p1, p2):
+    point = np.random.randint(1, len(p1) - 1)
+    child1 = np.concatenate([p1[:point], p2[point:]])
+    child2 = np.concatenate([p2[:point], p1[point:]])
+    return child1, child2
+
+def randomly_mutate_population(population, mutation_probability):
+    random_mutation_array = np.random.rand(*population.shape)
+    mutation_mask = random_mutation_array < mutation_probability
+    population[mutation_mask] = ~population[mutation_mask]
+    return population
+
+
+population = create_starting_population(population_size, chromosome_length)
+fitness = calculate_fitness(X, y, population)
+best_score_progress = [fitness.max()]
+
+
+for generation in range(max_generations):
+    new_population = []
+
+    for _ in range(population_size // 2):
+        p1 = select_individual_by_tournament(population, fitness)
+        p2 = select_individual_by_tournament(population, fitness)
+        c1, c2 = breed_by_crossover(p1, p2)
+        new_population.extend([c1, c2])
+
+    population = np.array(new_population)
+    population = randomly_mutate_population(population, mutation_rate)
+    fitness = calculate_fitness(X, y, population)
+    best_score_progress.append(fitness.max())
+
+best_idx = np.argmax(fitness)
+best_individual = population[best_idx]
+print("Melhor acurácia:", fitness[best_idx])
+print("Número de características selecionadas:", np.sum(best_individual))
+print("Índices das características selecionadas:", np.where(best_individual)[0])
+
+plt.plot(best_score_progress)
+plt.xlabel("Geração")
+plt.ylabel("Melhor acurácia")
+plt.title("GA - Seleção de Características (LBP)")
+plt.show() 
